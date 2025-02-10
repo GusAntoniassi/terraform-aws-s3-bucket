@@ -303,23 +303,20 @@ resource "aws_s3_bucket_lifecycle_configuration" "this" {
         }
       }
 
-      # Max 1 block - filter - without any key arguments or tags
+      # Max 1 block - filter - with prefix + one key argument or a single tag
       dynamic "filter" {
-        for_each = length(try(flatten([rule.value.filter]), [])) == 0 ? [true] : []
-
-        content {
-          #          prefix = ""
-        }
-      }
-
-      # Max 1 block - filter - with one key argument or a single tag
-      dynamic "filter" {
-        for_each = [for v in try(flatten([rule.value.filter]), []) : v if max(length(keys(v)), length(try(rule.value.filter.tags, rule.value.filter.tag, []))) == 1]
+        for_each = [for v in try(flatten([rule.value.filter]), []) : v
+          if try(v.prefix, false) != false && # Ensure prefix is present
+          max(
+            length(keys(v)),
+            length(try(rule.value.filter.tags,
+            rule.value.filter.tag, []))
+        ) == 1]
 
         content {
           object_size_greater_than = try(filter.value.object_size_greater_than, null)
           object_size_less_than    = try(filter.value.object_size_less_than, null)
-          prefix                   = try(filter.value.prefix, null)
+          prefix                   = filter.value.prefix
 
           dynamic "tag" {
             for_each = try(filter.value.tags, filter.value.tag, [])
@@ -332,15 +329,63 @@ resource "aws_s3_bucket_lifecycle_configuration" "this" {
         }
       }
 
-      # Max 1 block - filter - with more than one key arguments or multiple tags
+      # Max 1 block - filter - without prefix + one key argument or a single tag
       dynamic "filter" {
-        for_each = [for v in try(flatten([rule.value.filter]), []) : v if max(length(keys(v)), length(try(rule.value.filter.tags, rule.value.filter.tag, []))) > 1]
+        for_each = [for v in try(flatten([rule.value.filter]), []) : v
+          if try(v.prefix, false) == false && # Ensure prefix is omitted
+          max(
+            length(keys(v)),
+            length(try(rule.value.filter.tags,
+            rule.value.filter.tag, []))
+        ) == 1]
+
+        content {
+          object_size_greater_than = try(filter.value.object_size_greater_than, null)
+          object_size_less_than    = try(filter.value.object_size_less_than, null)
+
+          dynamic "tag" {
+            for_each = try(filter.value.tags, filter.value.tag, [])
+
+            content {
+              key   = tag.key
+              value = tag.value
+            }
+          }
+        }
+      }
+
+      # Max 1 block - filter - with prefix + more than one key arguments or multiple tags
+      dynamic "filter" {
+        for_each = [for v in try(flatten([rule.value.filter]), []) : v
+          if try(v.prefix, false) != false && # Ensure prefix is present
+          max(
+            length(keys(v)),
+            length(try(rule.value.filter.tags, rule.value.filter.tag, []))
+        ) > 1]
 
         content {
           and {
             object_size_greater_than = try(filter.value.object_size_greater_than, null)
             object_size_less_than    = try(filter.value.object_size_less_than, null)
-            prefix                   = try(filter.value.prefix, null)
+            prefix                   = filter.value.prefix
+            tags                     = try(filter.value.tags, filter.value.tag, null)
+          }
+        }
+      }
+
+      # Max 1 block - filter - without prefix + more than one key arguments or multiple tags
+      dynamic "filter" {
+        for_each = [for v in try(flatten([rule.value.filter]), []) : v
+          if try(v.prefix, false) == false && # Ensure prefix is omitted
+          max(
+            length(keys(v)),
+            length(try(rule.value.filter.tags, rule.value.filter.tag, []))
+        ) > 1]
+
+        content {
+          and {
+            object_size_greater_than = try(filter.value.object_size_greater_than, null)
+            object_size_less_than    = try(filter.value.object_size_less_than, null)
             tags                     = try(filter.value.tags, filter.value.tag, null)
           }
         }
